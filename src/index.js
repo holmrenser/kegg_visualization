@@ -1,6 +1,6 @@
 "use strict";
 
-__webpack_public_path__ = '/build/';
+__webpack_public_path__ = '/';
 
 import * as d3 from 'd3';
 import 'whatwg-fetch';
