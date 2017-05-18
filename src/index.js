@@ -184,7 +184,7 @@ console.log('Fetching data from KEGG REST API')
 
 const kegg_url = 'http://rest.kegg.jp/list/reaction'
 
-fetch(`http://cors-anywhere.herokuapp.com/${kegg_url}`)
+fetch(`https://cors-anywhere.herokuapp.com/${kegg_url}`)
   .then( (response) => {
     return response.text()
   }).then( (results) => {
