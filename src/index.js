@@ -1,5 +1,7 @@
 "use strict";
 
+__webpack_public_path__ = '/build/';
+
 import * as d3 from 'd3';
 import 'whatwg-fetch';
 import groupBy from 'lodash/groupby';

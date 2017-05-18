@@ -7,7 +7,7 @@ module.exports = {
   //devtool: "cheap-eval-source-map",
   output: {
     filename: 'main.js',
-    path: path.resolve(__dirname,'build'),
+    path: path.resolve(__dirname,'build/'),
     publicPath: '/build'
   },
   module: {
