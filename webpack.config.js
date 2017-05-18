@@ -4,7 +4,7 @@ var LodashModuleReplacementPlugin = require('lodash-webpack-plugin');
 
 module.exports = {
   entry: ['whatwg-fetch','./src/index.js','./scss/main.scss'],
-  devtool: "cheap-eval-source-map",
+  //devtool: "cheap-eval-source-map",
   output: {
     filename: 'main.js',
     path: path.resolve(__dirname,'build'),
