@@ -1,9 +1,23 @@
+"use strict";
+
 import * as d3 from 'd3';
 import 'whatwg-fetch';
+import groupBy from 'lodash/groupby';
+
+const commonCompounds = ['^H2O','^NAD[HP+]','^trans,trans-Farnesyl diphosphate','^S-Adenosyl-L-homocysteine',
+  '^H\+','^Oxygen','^Orthophosphate','^S-Adenosyl-L-methionine','^L-Glutamate','^CO2','^D-Glucose',
+  '^Acetyl-CoA','^CoA','^Acceptor','^Reduced acceptor','^2-Oxoglutarate','^UDP-glucose',
+  '^Pyruvate','^Diphosphate','^[AGU]TP','^[AGU]DP','^[AGU]MP','^Ammonia','^Acetate',
+  '^Reduced ferredoxin','^Acyl-CoA','^Malonyl-CoA'].join('|')
+
+
+const commonCompoundsRegex = new RegExp(commonCompounds)
+
+const reactionRegex = /^rn:/
 
 const processCompoundString = (compoundString) => {
   let parts = compoundString.trim().split(' ');
-  if (+parts[0] === +parts[0] || parts[0] === 'n'){
+  if (+parts[0] === +parts[0] || parts[0] === 'n' || parts[0] === '(n+1)'){
     parts = parts.slice(1, parts.length)
   }
   let compound = parts.join(' ')
@@ -42,7 +56,7 @@ const parseResults = (results) => {
     return {nodes: nodes, edges: edges}
   })
 
-  let nodes = [].concat(...processedLines.map((processedLine) => {return processedLine.nodes}))
+  const nodes = [].concat(...processedLines.map((processedLine) => {return processedLine.nodes}))
     .filter((node, index, self) => { 
       let dupIndex = self.findIndex( (n) => {
         return n.id === node.id
@@ -50,12 +64,44 @@ const parseResults = (results) => {
       return index === dupIndex
     })
 
-  let edges = [].concat(...processedLines.map((processedLine) => {return processedLine.edges}))
+  const edges = [].concat(...processedLines.map((processedLine) => {return processedLine.edges}))
 
-  return {nodes: nodes, edges: edges};
+  const filteredNodes = nodes.filter((node) => {
+    return !commonCompoundsRegex.test(node.id) || reactionRegex.test(node.id)
+  })
+
+  const filteredEdges = edges.filter((edge) => {
+    if (reactionRegex.test(edge.source)){
+      return !commonCompoundsRegex.test(edge.target)
+    } else {
+      return !commonCompoundsRegex.test(edge.source)
+    }
+    //return !commonCompoundsRegex.test(edge.source) && !commonCompoundsRegex.test(edge.target)
+  })
+
+  const indegrees = groupBy(filteredEdges, (edge) => { return edge.source } )
+  const outdegrees = groupBy(filteredEdges, (edge) => { return edge.target } )
+  
+  filteredNodes.forEach((node) => {
+    let indegree = indegrees[node.id]
+    let outdegree = outdegrees[node.id]
+    node.indegree = indegree === undefined ? 1 : indegree.length
+    node.outdegree = outdegree === undefined ? 1 : outdegree.length
+  })
+
+
+  console.log(filteredNodes)
+  console.log(filteredEdges)
+ 
+  return {nodes: filteredNodes, edges: filteredEdges};
 };
 
 const drawGraph = (nodes,edges) => {
+  const MyWorker = require('worker-loader!./worker.js')
+  const worker = new MyWorker();
+
+  let meter = document.querySelector('#progress');
+
   const svg = d3.select('svg');
   const width = +svg.attr('width');
   const height = + svg.attr('height');
@@ -66,75 +112,84 @@ const drawGraph = (nodes,edges) => {
 
   let vis = svg.append('g')
       .attr('class','vis')
+      .attr('transform','translate(300,300)scale(0.2,0.2)')
       .call(zoom)
 
-  const forceCharge = d3.forceManyBody().strength(-10).distanceMax(100)
+  worker.postMessage({
+    nodes: nodes,
+    edges: edges,
+    width: width,
+    height: height
+  })
 
-  const forceLink = d3.forceLink().id( (d) => {return d.id} ).distance(100);
-  //charge.strength = -10
-  //charge.distanceMax = 100
+  worker.onmessage = function(event){
+    switch (event.data.type){
+      case 'tick': return ticked(event.data);
+      case 'end': return ended(event.data);
+    }
+  }
 
-  const simulation = d3.forceSimulation()
-    .force('link', forceLink)
-    .force('charge', forceCharge)
-    .force('center', d3.forceCenter(width / 2, height / 2))
+  function ticked(data) {
+    let progress = data.progress;
 
-  let link = vis.append('g')
-      .attr('class','links')
-    .selectAll('line')
-    .data(edges)
-    .enter().append('line')
-      .attr('stroke-width', (d) => { return 1 }) //fill this in later
+    meter.style.width = 100 * progress + "%";
+  }
 
-  let node = vis.append('g')
-      .attr('class','nodes')
-    .selectAll('circle')
-    .data(nodes)
-    .enter().append('circle')
-      .attr('r', 5)
-      .attr('fill', (d) => { 
-        console.log(d)
-        if (d.id.slice(0,2) === 'rn'){
-          return 'darkorange'
-        } else {
-          return 'lightblue'
-        }
-      })
-      .on('click',(d) => {
-        console.log(d.id)
-      })
+  function ended(data) {
+    let nodes = data.nodes;
+    let edges = data.edges;
 
-  simulation.nodes(nodes)
-    .on('tick', ticked)
+    meter.style.display = "none";
 
-  simulation.force('link')
-    .links(edges)
-
-  function ticked()  {
-    console.log('ticked')
-    link
+    let link = vis.append('g')
+        .attr('class','links')
+      .selectAll('line')
+      .data(edges)
+      .enter().append('line')
         .attr("x1", function(d) { return d.source.x; })
         .attr("y1", function(d) { return d.source.y; })
         .attr("x2", function(d) { return d.target.x; })
-        .attr("y2", function(d) { return d.target.y; });
+        .attr("y2", function(d) { return d.target.y; })
+        .attr('stroke-width', (d) => { return 1 }) //fill this in later
 
-    node
+    let node = vis.append('g')
+        .attr('class','nodes')
+      .selectAll('circle')
+      .data(nodes)
+      .enter().append('circle')
         .attr("cx", function(d) { return d.x; })
-        .attr("cy", function(d) { return d.y; });
-  }
-  function zoomed() {
+        .attr("cy", function(d) { return d.y; })
+        .attr('r', (d) => {
+          //return (1 + Math.log(d.indegree + d.outdegree)) * 10
+          return (2 * Math.sqrt(d.indegree + d.outdegree)) + 3
+        })
+        .attr('fill', (d) => { 
+          if (d.id.slice(0,2) === 'rn'){
+            return '#fdae61'
+          } else {
+            return '#2b83ba'
+          }
+        })
+        .on('click',(d) => {
+          console.log(d.id, d.indegree, d.outdegree)
+        })
+    }
+   function zoomed() {
     vis
         .attr('transform', d3.event.transform);
   }
-};
+}
 
 console.log('Fetching data from KEGG REST API')
-fetch('http://cors-anywhere.herokuapp.com/http://rest.kegg.jp/list/reaction')
+
+const kegg_url = 'http://rest.kegg.jp/list/reaction'
+
+fetch(`http://cors-anywhere.herokuapp.com/${kegg_url}`)
   .then( (response) => {
     return response.text()
   }).then( (results) => {
     return parseResults(results)
   }).then( (data) => {
     console.log('Finished parsing data')
-    drawGraph(data.nodes,data.edges)
+   drawGraph(data.nodes,data.edges)
   })

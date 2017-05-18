@@ -1,5 +1,6 @@
 var path = require('path');
 var webpack = require('webpack');
+var LodashModuleReplacementPlugin = require('lodash-webpack-plugin');
 
 module.exports = {
   entry: ['whatwg-fetch','./src/index.js','./scss/main.scss'],
@@ -27,6 +28,7 @@ module.exports = {
     ]
   },
   plugins: [
+    new LodashModuleReplacementPlugin,
     new webpack.DefinePlugin({
       'process.env': {
         NODE_ENV: JSON.stringify('production')
